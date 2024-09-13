@@ -32,6 +32,7 @@ this mimics the similar behaviors of these models without fine-tuned big ass mod
 
 
 
+
 current example output:
 ```
 
@@ -198,3 +199,20 @@ In conclusion, the long-term impacts of AGI on human society are complex and mul
 Future research and development efforts should focus on addressing the potential risks and challenges associated with AGI, while also exploring the opportunities for societal transformation and innovation.
 
 ```
+
+### 💖 Support My Work
+
+If you find my projects helpful and want to support my ongoing research and development:
+
+<div align="center">
+
+[![PayPal](https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/chaoticbasil?country.x=US&locale.x=en_US)
+![Bitcoin](https://img.shields.io/badge/Bitcoin-000000?style=for-the-badge&logo=bitcoin&logoColor=white)
+
+</div>
+
+**Bitcoin Address:** `bc1q9qgj7u4wh3dev5puyssrjg2xmh8wa8mtechah3`
+
+Your support fuels further innovation in AI technology. Thank you!
+
+#AIEngineer #MachineLearning #PythonDeveloper #AgenticAI #LLM #RAG #OpenAIAPI #AutonomousSystems
