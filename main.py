@@ -17,45 +17,44 @@
 
 import os
 import openai
-import json
-import time
+from structured_response_generator import StructuredResponseGenerator
 from thought_generator import ThoughtGenerator
-
-client = openai.OpenAI(
-    base_url="https://api.groq.com/openai/v1", # You can replace this with the base URL of your OpenAI-compatible API of your choosing.
-    api_key=os.environ.get("GROQ_API_KEY") # This is the API key for the Groq API. You can get one by signing up at https://console.groq.com/ or change with the base URL of your OpenAI-compatible API.
-) 
-
-def generate_structured_response(messages, output_schema, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            response = client.chat.completions.create(
-                model="llama-3.1-70b-versatile", # This is the model we are using. You can change this to any other model that is compatible with OpenAI's API.
-                messages=messages + [
-                    {"role": "system", "content": f"Respond with a JSON object that follows this schema: {json.dumps(output_schema)}"}
-                ],
-                response_format={"type": "json_object"},
-            )
-            return json.loads(response.choices[0].message.content)
-        except (openai.BadRequestError, json.JSONDecodeError) as e:
-            if attempt == max_retries - 1:
-                raise
-            print(f"Error occurred: {e}. Retrying...")
-            time.sleep(1)
+from response_analyzer import ResponseAnalyzer
+from final_response_generator import FinalResponseGenerator
+from web_research_and_scraper import WebResearchAndScraper
 
 def print_separator():
     print("\n" + "="*50 + "\n")
 
 if __name__ == "__main__":
-    initial_prompt = "Explore the potential long-term impacts of artificial general intelligence on human society."
+    client = openai.OpenAI(
+        base_url="https://api.groq.com/openai/v1",
+        api_key=os.environ.get("GROQ_API_KEY")
+    )
     
-    thought_generator = ThoughtGenerator(generate_structured_response)
-    
+    structured_response_generator = StructuredResponseGenerator(client) # this is the model used to generate the responses. 
+    thought_generator = ThoughtGenerator(structured_response_generator) # this is the model used to generate the thoughts.
+    response_analyzer = ResponseAnalyzer(structured_response_generator) # this is the model used to analyze the responses.
+    final_response_generator = FinalResponseGenerator(structured_response_generator) # this is the model used to generate the final responses.
+    web_researcher = WebResearchAndScraper(structured_response_generator) # this is the model used to conduct the web research.
+
+    initial_prompt = input("Enter the initial prompt: ") # this is the initial prompt for the entire process.
+
     try:
+        print("Initiating web research...")
+        print_separator()
+        research_summary = web_researcher.conduct_research(initial_prompt)
+        print("Web research completed.")
+        print(f"Research summary: {research_summary['summary']}")
+        print("Key points from research:")
+        for point in research_summary['key_points']:
+            print(f"- {point}")
+        print_separator()
+
         print("Initiating thought generation process...")
         print_separator()
         
-        thoughts, thinking_time = thought_generator.generate_thoughts(initial_prompt)
+        thoughts, thinking_time = thought_generator.generate_thoughts(initial_prompt, research_summary)
         
         print(f"Thought generation completed in {thinking_time:.2f} seconds.")
         print(f"Generated {len(thoughts)} thoughts.")
@@ -85,13 +84,17 @@ if __name__ == "__main__":
         reflection = thought_generator.reflect(thoughts, response, thinking_time)
         print("\nReflection:")
         print(f"Content: {reflection['content']}")
-        print("Key Insights:")
-        for insight in reflection['key_points']:
-            print(f"- {insight}")
-        
+        print("Key Points:")
+        for point in reflection['key_points']:
+            print(f"- {point}")
+        print("\nAreas for Improvement:")
+        for area in reflection['areas_for_improvement']:
+            print(f"- {area}")
+        print(f"\nConfidence Level: {reflection['confidence_level']:.2f}")
+
         print_separator()
         print("Generating final responses...")
-        final_responses = thought_generator.generate_final_responses(thoughts, reflection, initial_prompt)
+        final_responses = final_response_generator.generate_final_responses(thoughts, reflection, initial_prompt)
         for i, response in enumerate(final_responses, 1):
             print(f"\nFinal Response {i}:")
             print(f"Content: {response['content']}")
@@ -102,7 +105,7 @@ if __name__ == "__main__":
         
         print_separator()
         print("Choosing the best final response...")
-        best_response_choice = thought_generator.choose_best_response(final_responses)
+        best_response_choice = final_response_generator.choose_best_response(final_responses)
         best_response = final_responses[best_response_choice['chosen_response'] - 1]
         
         print("\nBest Final Response:")
@@ -112,3 +115,7 @@ if __name__ == "__main__":
             print(f"- {point}")
     except Exception as e:
         print(f"An error occurred: {e}")
+        print("Debug information:")
+        print(f"Reflection: {reflection}")
+        print(f"Thoughts: {thoughts}")
+        print(f"Initial prompt: {initial_prompt}")

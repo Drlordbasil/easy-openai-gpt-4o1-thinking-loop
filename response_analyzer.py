@@ -1,8 +1,8 @@
 import json
 
 class ResponseAnalyzer:
-    def __init__(self, response_generator):
-        self.response_generator = response_generator
+    def __init__(self, structured_response_generator):
+        self.structured_response_generator = structured_response_generator
 
     def analyze_thoughts(self, initial_prompt, all_thoughts, output_schema):
         analysis_prompt = f"""Analyze the following thoughts on the initial prompt: '{initial_prompt}'
@@ -18,7 +18,7 @@ Your response should follow the specified output format and ensure proper JSON f
             {"role": "user", "content": analysis_prompt}
         ]
 
-        analysis = self.response_generator(messages, output_schema)
+        analysis = self.structured_response_generator.generate(messages, output_schema)
         analysis['type'] = 'analysis'
         return analysis
 

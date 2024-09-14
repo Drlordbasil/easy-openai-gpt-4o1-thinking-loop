@@ -1,33 +1,46 @@
 import json
 import time
-import random
+from typing import List, Dict, Any
 
 class ThoughtGenerator:
-    def __init__(self, response_generator):
-        self.response_generator = response_generator
+    def __init__(self, structured_response_generator):
+        self.structured_response_generator = structured_response_generator
 
-    def generate_thoughts(self, initial_prompt, max_iterations=10, max_time=60):
+    def generate_thoughts(self, initial_prompt: str, research_summary: Dict[str, Any], max_iterations: int = 20, max_time: int = 300):
         thoughts = []
         messages = [
-            {"role": "system", "content": """You are an AI assistant capable of deep, iterative thinking. Generate comprehensive and structured thoughts on the given topic. 
-            Your output should strictly follow the JSON schema provided. When you believe you have explored the topic sufficiently, set 'continue_thinking' to false.
+            {"role": "system", "content": """You are an advanced AI capable of deep, iterative thinking using a tree of thought approach. Generate comprehensive and structured thoughts on the given topic. 
+            Your output should strictly follow the JSON schema provided. Engage in self-debate to determine when to stop thinking.
             
-            Here's an example of a valid thought:
+            Here's an example of a valid thought structure:
             {
-                "content": "AGI could revolutionize healthcare by enabling personalized medicine and accelerating drug discovery. This could lead to longer lifespans and improved quality of life. However, it also raises concerns about privacy and data security in healthcare.",
+                "content": "AGI could revolutionize healthcare through personalized medicine and accelerated drug discovery, potentially leading to longer lifespans and improved quality of life. However, it raises concerns about privacy, data security, and potential job displacement in the medical field.",
                 "key_points": [
-                    "Personalized medicine",
+                    "Personalized medicine advancements",
                     "Accelerated drug discovery",
                     "Potential for longer lifespans",
                     "Improved quality of life",
-                    "Privacy concerns in healthcare",
-                    "Data security issues"
+                    "Privacy and data security concerns",
+                    "Potential job displacement in healthcare"
                 ],
-                "continue_thinking": true
+                "sub_thoughts": [
+                    {
+                        "content": "Exploring the ethical implications of AGI in healthcare...",
+                        "key_points": ["Ethical consideration 1", "Ethical consideration 2"],
+                        "sub_thoughts": []
+                    },
+                    {
+                        "content": "Analyzing the economic impact of AGI-driven healthcare innovations...",
+                        "key_points": ["Economic impact 1", "Economic impact 2"],
+                        "sub_thoughts": []
+                    }
+                ],
+                "continue_thinking": true,
+                "reasoning": "Further exploration is needed to fully understand the societal implications."
             }
             
-            Ensure your response strictly adheres to this format."""},
-            {"role": "user", "content": initial_prompt}
+            Ensure your response strictly adheres to this format, including nested sub_thoughts when necessary."""},
+            {"role": "user", "content": f"Initial prompt: {initial_prompt}\n\nResearch summary: {research_summary['summary']}\n\nKey points from research: {', '.join(research_summary['key_points'])}"}
         ]
 
         thought_schema = {
@@ -35,44 +48,60 @@ class ThoughtGenerator:
             "properties": {
                 "content": {"type": "string", "description": "A detailed exploration of the topic"},
                 "key_points": {"type": "array", "items": {"type": "string"}, "description": "A list of key points from the content"},
-                "continue_thinking": {"type": "boolean", "description": "Whether to continue the thought process"}
+                "sub_thoughts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#"
+                    },
+                    "description": "Nested thoughts exploring sub-topics"
+                },
+                "continue_thinking": {"type": "boolean", "description": "Whether to continue the thought process"},
+                "reasoning": {"type": "string", "description": "Reasoning for continuing or stopping the thought process"}
             },
-            "required": ["content", "key_points", "continue_thinking"]
+            "required": ["content", "key_points", "sub_thoughts", "continue_thinking", "reasoning"]
         }
 
         start_time = time.time()
         for i in range(max_iterations):
-            thought = self.response_generator(messages, thought_schema)
+            thought = self.structured_response_generator.generate(messages, thought_schema)
             thoughts.append(thought)
             
             if not thought['continue_thinking']:
                 break
             
             messages.append({"role": "assistant", "content": json.dumps(thought)})
-            messages.append({"role": "user", "content": f"Thought {i+1} complete. Continue exploring this topic. Delve deeper or consider new angles. Remember to set 'continue_thinking' to false when you believe you've explored the topic sufficiently."})
+            messages.append({"role": "user", "content": f"""Thought {i+1} complete. Engage in self-debate to determine if further exploration is necessary. Consider:
+            1. Have all key aspects of the topic been thoroughly explored?
+            2. Are there any contradictions or gaps in the current thoughts?
+            3. Could additional thinking lead to novel insights?
+            4. Is the current depth of analysis sufficient for the complexity of the topic?
+
+            Based on this self-debate, decide whether to continue thinking or conclude the process. Provide clear reasoning for your decision."""})
             
-            if time.time() - start_time > max_time:
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_time:
+                print(f"Maximum thinking time of {max_time} seconds reached. Concluding thought process.")
                 break
 
         thinking_time = time.time() - start_time
         return thoughts, thinking_time
 
-    def generate_response(self, thoughts, initial_prompt):
+    def generate_response(self, thoughts: List[Dict[str, Any]], initial_prompt: str) -> Dict[str, Any]:
         response_schema = {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "A coherent response to the initial prompt"},
-                "key_points": {"type": "array", "items": {"type": "string"}, "description": "A list of key points from the response"}
+                "key_points": {"type": "array", "items": {"type": "string"}, "description": "A list of key points from the response"},
+                "thought_process": {"type": "string", "description": "A brief explanation of the thought process that led to this response"}
             },
-            "required": ["content", "key_points"]
+            "required": ["content", "key_points", "thought_process"]
         }
 
-        response_prompt = f"Based on the following thoughts, provide a coherent response to the initial prompt: '{initial_prompt}'\n\n"
-        for i, thought in enumerate(thoughts, 1):
-            response_prompt += f"Thought {i}:\n{thought['content'][:200]}...\n\n"
+        response_prompt = f"Based on the following thought tree, provide a coherent response to the initial prompt: '{initial_prompt}'\n\n"
+        response_prompt += self._format_thought_tree(thoughts)
 
         messages = [
-            {"role": "system", "content": """You are an AI assistant that synthesizes thoughts into coherent responses. 
+            {"role": "system", "content": """You are an AI assistant that synthesizes complex thought trees into coherent responses. 
             Your output should follow this format:
             {
                 "content": "A comprehensive response to the prompt...",
@@ -80,26 +109,37 @@ class ThoughtGenerator:
                     "Key point 1",
                     "Key point 2",
                     "Key point 3"
-                ]
+                ],
+                "thought_process": "A brief explanation of how the thought tree led to this response..."
             }"""},
             {"role": "user", "content": response_prompt}
         ]
 
-        return self.response_generator(messages, response_schema)
+        return self.structured_response_generator.generate(messages, response_schema)
 
-    def reflect(self, thoughts, response, thinking_time):
+    def reflect(self, thoughts: List[Dict[str, Any]], response: Dict[str, Any], thinking_time: float) -> Dict[str, Any]:
         reflection_schema = {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "A reflection on the thought process and response"},
-                "key_points": {"type": "array", "items": {"type": "string"}, "description": "Key insights from the reflection"}
+                "key_points": {"type": "array", "items": {"type": "string"}, "description": "Key points from the reflection"},
+                "areas_for_improvement": {"type": "array", "items": {"type": "string"}, "description": "Areas where the thinking process could be improved"},
+                "confidence_level": {"type": "number", "description": "A score from 0 to 1 indicating confidence in the final response"}
             },
-            "required": ["content", "key_points"]
+            "required": ["content", "key_points", "areas_for_improvement", "confidence_level"]
         }
 
-        reflection_prompt = f"Reflect on the thought process that led to the following response. Consider the quality of the thoughts, the coherence of the response, and areas for improvement. Thinking time: {thinking_time:.2f} seconds.\n\nResponse:\n{response['content']}\n\nThoughts:\n"
-        for i, thought in enumerate(thoughts, 1):
-            reflection_prompt += f"Thought {i}:\n{thought['content'][:200]}...\n\n"
+        reflection_prompt = f"""Reflect on the following thought process and response. Consider the quality, depth, and breadth of the thoughts, the coherence of the response, and areas for improvement.
+
+Thought Tree:
+{self._format_thought_tree(thoughts)}
+
+Response:
+{json.dumps(response, indent=2)}
+
+Thinking time: {thinking_time:.2f} seconds
+
+Provide a detailed reflection, including key points, areas for improvement, and a confidence level in the final response."""
 
         messages = [
             {"role": "system", "content": """You are an AI assistant that reflects on thought processes and responses to improve future performance. 
@@ -107,110 +147,30 @@ class ThoughtGenerator:
             {
                 "content": "A detailed reflection on the thought process and response...",
                 "key_points": [
-                    "Key insight 1",
-                    "Key insight 2",
-                    "Key insight 3"
-                ]
+                    "Key point 1",
+                    "Key point 2",
+                    "Key point 3"
+                ],
+                "areas_for_improvement": [
+                    "Area for improvement 1",
+                    "Area for improvement 2"
+                ],
+                "confidence_level": 0.85
             }"""},
             {"role": "user", "content": reflection_prompt}
         ]
 
-        return self.response_generator(messages, reflection_schema)
+        return self.structured_response_generator.generate(messages, reflection_schema)
 
-    def final_thought(self, reflection):
-        final_thought_schema = {
-            "type": "object",
-            "properties": {
-                "content": {"type": "string", "description": "A final thought on the topic, incorporating insights from the reflection"},
-                "key_points": {"type": "array", "items": {"type": "string"}, "description": "Key points from the final thought"}
-            },
-            "required": ["content", "key_points"]
-        }
-
-        final_thought_prompt = f"Based on the following reflection, provide a final thought on the topic:\n\n{reflection['content']}"
-
-        messages = [
-            {"role": "system", "content": """You are an AI assistant that provides insightful final thoughts on a topic. 
-            Your output should follow this format:
-            {
-                "content": "A comprehensive final thought on the topic...",
-                "key_points": [
-                    "Key point 1",
-                    "Key point 2",
-                    "Key point 3"
-                ]
-            }"""},
-            {"role": "user", "content": final_thought_prompt}
-        ]
-
-        return self.response_generator(messages, final_thought_schema)
-
-    def generate_final_responses(self, thoughts, reflection, initial_prompt, num_responses=3):
-        final_response_schema = {
-            "type": "object",
-            "properties": {
-                "content": {"type": "string", "description": "A comprehensive final response to the initial prompt"},
-                "key_points": {"type": "array", "items": {"type": "string"}, "description": "Key points from the final response"}
-            },
-            "required": ["content", "key_points"]
-        }
-
-        final_responses = []
-        for i in range(num_responses):
-            final_response_prompt = f"""Based on the following information, provide a comprehensive final response to the initial prompt: '{initial_prompt}'
-
-Reflection:
-{reflection['content']}
-
-Key Insights:
-{', '.join(reflection['key_points'])}
-
-Generate a unique and insightful response that incorporates the lessons learned from the thought process and reflection.
-"""
-
-            messages = [
-                {"role": "system", "content": f"""You are an AI assistant that provides comprehensive final responses on a topic. 
-                Your output should follow this format:
-                {{
-                    "content": "A comprehensive final response to the prompt...",
-                    "key_points": [
-                        "Key point 1",
-                        "Key point 2",
-                        "Key point 3"
-                    ]
-                }}
-                This is final response attempt {i+1} out of {num_responses}. Ensure each response is unique and insightful."""},
-                {"role": "user", "content": final_response_prompt}
-            ]
-
-            final_responses.append(self.response_generator(messages, final_response_schema))
-
-        return final_responses
-
-    def choose_best_response(self, final_responses):
-        best_response_schema = {
-            "type": "object",
-            "properties": {
-                "chosen_response": {"type": "integer", "description": "The index of the chosen best response (1, 2, or 3)"}
-            },
-            "required": ["chosen_response"]
-        }
-
-        choice_prompt = f"""Analyze the following final responses and choose the best one based on its comprehensiveness, insight, and overall quality:
-
-{json.dumps(final_responses, indent=2)}
-
-Choose the best response and return only the index of the chosen response (1, 2, or 3).
-"""
-
-        messages = [
-            {"role": "system", "content": """You are an AI assistant tasked with choosing the best final response from multiple options.
-            Your output should follow this format:
-            {
-                "chosen_response": 1
-            }"""},
-            {"role": "user", "content": choice_prompt}
-        ]
-
-        choice = self.response_generator(messages, best_response_schema)
-        return choice
+    def _format_thought_tree(self, thoughts: List[Dict[str, Any]], indent: int = 0) -> str:
+        formatted_tree = ""
+        for i, thought in enumerate(thoughts, 1):
+            formatted_tree += f"{'  ' * indent}Thought {i}:\n"
+            formatted_tree += f"{'  ' * (indent + 1)}Content: {thought['content'][:200]}...\n"
+            formatted_tree += f"{'  ' * (indent + 1)}Key Points: {', '.join(thought['key_points'])}\n"
+            if thought['sub_thoughts']:
+                formatted_tree += f"{'  ' * (indent + 1)}Sub-thoughts:\n"
+                formatted_tree += self._format_thought_tree(thought['sub_thoughts'], indent + 2)
+            formatted_tree += f"{'  ' * (indent + 1)}Continue Thinking: {thought['continue_thinking']}\n"
+            formatted_tree += f"{'  ' * (indent + 1)}Reasoning: {thought['reasoning']}\n\n"
+        return formatted_tree
