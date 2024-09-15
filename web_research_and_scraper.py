@@ -10,9 +10,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse
+from fake_useragent import UserAgent
+import trafilatura
 
 class WebResearchAndScraper:
-    def __init__(self, structured_response_generator, cache_dir='./cache'):
+    def __init__(self, structured_response_generator, cache_dir='./cache', max_retries=3, timeout=30):
         self.structured_response_generator = structured_response_generator
         self.chrome_options = Options()
         self.chrome_options.add_argument("--headless")
@@ -20,6 +23,9 @@ class WebResearchAndScraper:
         self.chrome_options.add_argument("--no-sandbox")
         self.chrome_options.add_argument("--disable-dev-shm-usage")
         self.cache_dir = cache_dir
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.user_agent = UserAgent()
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def generate_search_terms(self, topic):
@@ -36,23 +42,24 @@ class WebResearchAndScraper:
         }
          
         messages = [
-            {"role": "system", "content": "You are an AI assistant that generates relevant search terms for a given topic."},
-            {"role": "user", "content": f"Generate a list of 3 search terms for the topic: {topic}"}
+            {"role": "system", "content": "You are an AI assistant that generates relevant and diverse search terms for a given topic."},
+            {"role": "user", "content": f"Generate a list of 5 search terms for the topic: {topic}. Include a mix of broad and specific terms."}
         ]
         print("Generating search terms...")
         response = self.structured_response_generator.generate(messages, search_terms_schema)
         print("Search terms generated.")
         return response['search_terms']
 
-    def search_and_scrape(self, search_terms, num_results=3):
+    def search_and_scrape(self, search_terms, num_results=5):
         all_content = []
         print("Searching and scraping...")
         
-        with ThreadPoolExecutor(max_workers=len(search_terms) * 2) as executor:
+        with ThreadPoolExecutor(max_workers=len(search_terms) * 3) as executor:
             future_to_url = {}
             for term in search_terms:
                 future_to_url.update(self._search_google(term, num_results, executor))
                 future_to_url.update(self._search_bing(term, num_results, executor))
+                future_to_url.update(self._search_duckduckgo(term, num_results, executor))
             
             for future in as_completed(future_to_url):
                 url = future_to_url[future]
@@ -74,15 +81,22 @@ class WebResearchAndScraper:
         url = f"https://www.bing.com/search?q={query}&count={num_results}"
         return self._search_engine(url, 'li', 'b_algo', executor)
 
+    def _search_duckduckgo(self, query, num_results, executor):
+        url = f"https://html.duckduckgo.com/html/?q={query}"
+        return self._search_engine(url, 'div', 'links_main', executor)
+
     def _search_engine(self, url, tag, class_name, executor):
-        try:
-            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-            soup = BeautifulSoup(response.text, 'html.parser')
-            links = [a.find('a')['href'] for a in soup.find_all(tag, class_=class_name) if a.find('a')]
-            return {executor.submit(self._scrape_website, link): link for link in links}
-        except Exception as e:
-            print(f"Error searching {url}: {e}")
-            return {}
+        for _ in range(self.max_retries):
+            try:
+                headers = {'User-Agent': self.user_agent.random}
+                response = requests.get(url, headers=headers, timeout=self.timeout)
+                soup = BeautifulSoup(response.text, 'html.parser')
+                links = [a.find('a')['href'] for a in soup.find_all(tag, class_=class_name) if a.find('a')]
+                return {executor.submit(self._scrape_website, link): link for link in links[:5]}  # Limit to top 5 results
+            except Exception as e:
+                print(f"Error searching {url}: {e}")
+                time.sleep(1)
+        return {}
 
     def _scrape_website(self, url):
         cache_key = self._get_cache_key(url)
@@ -90,18 +104,24 @@ class WebResearchAndScraper:
         if cached_content:
             return cached_content
 
-        try:
-            with webdriver.Chrome(options=self.chrome_options) as driver:
-                driver.get(url)
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                text = soup.get_text()
-                content = text[:1000]  # Limit to first 1000 characters
-                self._cache_content(cache_key, content)
-                return content
-        except Exception as e:
-            print(f"Error scraping {url}: {e}")
-            return None
+        for _ in range(self.max_retries):
+            try:
+                downloaded = trafilatura.fetch_url(url)
+                if downloaded:
+                    content = trafilatura.extract(downloaded, include_links=True, include_images=False, include_tables=False)
+                    if content:
+                        cleaned_text = ' '.join(content.split())  # Remove extra whitespace
+                        final_content = f"Source: {url}\n\n{cleaned_text[:2000]}"  # Include source URL and limit to 2000 characters
+                        self._cache_content(cache_key, final_content)
+                        return final_content
+                    else:
+                        print(f"No content extracted from {url}")
+                else:
+                    print(f"Failed to download {url}")
+            except Exception as e:
+                print(f"Error scraping {url}: {e}")
+                time.sleep(1)
+        return None
 
     def _get_cache_key(self, url):
         return hashlib.md5(url.encode()).hexdigest()
@@ -127,14 +147,19 @@ class WebResearchAndScraper:
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Key points extracted from the research"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of sources used in the research"
                 }
             },
-            "required": ["summary", "key_points"]
+            "required": ["summary", "key_points", "sources"]
         }
 
         messages = [
-            {"role": "system", "content": "You are an AI assistant that summarizes web research findings."},
-            {"role": "user", "content": f"Summarize the following web research content:\n\n{' '.join(content)}"}
+            {"role": "system", "content": "You are an AI assistant that summarizes web research findings comprehensively and accurately."},
+            {"role": "user", "content": f"Summarize the following web research content, including key points and a list of sources:\n\n{' '.join(content)}"}
         ]
 
         return self.structured_response_generator.generate(messages, summary_schema)
@@ -143,5 +168,5 @@ class WebResearchAndScraper:
         search_terms = self.generate_search_terms(topic)
         content = self.search_and_scrape(search_terms)
         if not content:
-            return {"summary": "No content found", "key_points": []}
+            return {"summary": "No content found", "key_points": [], "sources": []}
         return self.summarize_research(content)
