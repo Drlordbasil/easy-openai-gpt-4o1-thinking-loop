@@ -23,8 +23,23 @@ from response_analyzer import ResponseAnalyzer
 from final_response_generator import FinalResponseGenerator
 from web_research_and_scraper import WebResearchAndScraper
 
+# ANSI escape codes for colors
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 def print_separator():
     print("\n" + "="*50 + "\n")
+
+def print_colored(text, color):
+    print(f"{color}{text}{Colors.ENDC}")
 
 if __name__ == "__main__":
     client = openai.OpenAI(
@@ -93,29 +108,49 @@ if __name__ == "__main__":
         print(f"\nConfidence Level: {reflection['confidence_level']:.2f}")
 
         print_separator()
-        print("Generating final responses...")
-        final_responses = final_response_generator.generate_final_responses(thoughts, reflection, initial_prompt)
+        print_colored("Generating final responses...", Colors.HEADER)
+        final_responses = final_response_generator.generate_final_responses(thoughts, reflection, initial_prompt, research_summary)
         for i, response in enumerate(final_responses, 1):
-            print(f"\nFinal Response {i}:")
+            print_colored(f"\nFinal Response {i}:", Colors.BLUE)
             print(f"Content: {response['content']}")
-            print("Key Points:")
+            print_colored("Key Points:", Colors.CYAN)
             for point in response['key_points']:
                 print(f"- {point}")
+            print(f"Reasoning: {response['reasoning']}")
+            print(f"Confidence Score: {response['confidence_score']:.2f}")
             print("-" * 30)
         
         print_separator()
-        print("Choosing the best final response...")
+        print_colored("Choosing the best final response...", Colors.HEADER)
         best_response_choice = final_response_generator.choose_best_response(final_responses)
         best_response = final_responses[best_response_choice['chosen_response'] - 1]
         
-        print("\nBest Final Response:")
-        print(f"Content: {best_response['content']}")
-        print("Key Points:")
+        print_separator()
+        print_colored("Generating meta-analysis...", Colors.HEADER)
+        meta_analysis = final_response_generator.generate_meta_analysis(final_responses, best_response_choice)
+        print_colored("\nMeta-Analysis:", Colors.YELLOW)
+        print(f"Overall Quality: {meta_analysis['overall_quality']}")
+        print_colored("Key Insights:", Colors.CYAN)
+        for insight in meta_analysis['key_insights']:
+            print(f"- {insight}")
+        print_colored("Areas for Improvement:", Colors.CYAN)
+        for area in meta_analysis['areas_for_improvement']:
+            print(f"- {area}")
+        print(f"Confidence Analysis: {meta_analysis['confidence_analysis']}")
+
+        # Color-coded final response as the last output
+        print_separator()
+        print_colored("FINAL RESPONSE:", Colors.BOLD + Colors.GREEN)
+        print_colored(f"Content: {best_response['content']}", Colors.GREEN)
+        print_colored("Key Points:", Colors.CYAN)
         for point in best_response['key_points']:
-            print(f"- {point}")
+            print_colored(f"- {point}", Colors.CYAN)
+        print_colored(f"Reasoning: {best_response['reasoning']}", Colors.YELLOW)
+        print_colored(f"Confidence Score: {best_response['confidence_score']:.2f}", Colors.YELLOW)
+        print_colored(f"\nReasoning for choice: {best_response_choice['reasoning']}", Colors.YELLOW)
+
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print_colored(f"An error occurred: {e}", Colors.RED)
         print("Debug information:")
-        print(f"Reflection: {reflection}")
         print(f"Thoughts: {thoughts}")
         print(f"Initial prompt: {initial_prompt}")
