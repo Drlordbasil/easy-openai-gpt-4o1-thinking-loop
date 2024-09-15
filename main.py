@@ -48,10 +48,10 @@ if __name__ == "__main__":
     )
     
     structured_response_generator = StructuredResponseGenerator(client) # this is the model used to generate the responses. 
-    thought_generator = ThoughtGenerator(structured_response_generator) # this is the model used to generate the thoughts.
+    web_researcher = WebResearchAndScraper(structured_response_generator)
+    thought_generator = ThoughtGenerator(structured_response_generator, web_researcher) # this is the model used to generate the thoughts.
     response_analyzer = ResponseAnalyzer(structured_response_generator) # this is the model used to analyze the responses.
     final_response_generator = FinalResponseGenerator(structured_response_generator) # this is the model used to generate the final responses.
-    web_researcher = WebResearchAndScraper(structured_response_generator) # this is the model used to conduct the web research.
 
     initial_prompt = input("Enter the initial prompt: ") # this is the initial prompt for the entire process.
 
@@ -83,6 +83,8 @@ if __name__ == "__main__":
             for point in thought['key_points']:
                 print(f"- {point}")
             print(f"Continue Thinking: {'Yes' if thought['continue_thinking'] else 'No'}")
+            print(f"Conduct Research: {'Yes' if thought['conduct_research'] else 'No'}")
+            print(f"Reasoning: {thought['reasoning']}")
             print("-" * 30)
         
         print_separator()
@@ -93,6 +95,7 @@ if __name__ == "__main__":
         print("Key Points:")
         for point in response['key_points']:
             print(f"- {point}")
+        print(f"Reasoning: {response['reasoning']}")
         
         print_separator()
         print("Reflecting on the thought process...")
@@ -106,6 +109,7 @@ if __name__ == "__main__":
         for area in reflection['areas_for_improvement']:
             print(f"- {area}")
         print(f"\nConfidence Level: {reflection['confidence_level']:.2f}")
+        print(f"\nMeta-Cognition: {reflection['meta_cognition']}")
 
         print_separator()
         print_colored("Generating final responses...", Colors.HEADER)
